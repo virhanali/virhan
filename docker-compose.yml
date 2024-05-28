@@ -1,0 +1,26 @@
+version: '3.7'
+
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Hanhan123
+      POSTGRES_DB: virhan_db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: always
+
+  app:
+    image: virhanali/virhan-service-amd64:latest
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    restart: always
+
+volumes:
+  db_data:
