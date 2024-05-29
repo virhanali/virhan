@@ -101,5 +101,11 @@ jobs:
           # Navigate to the target directory and deploy
           docker-compose up -d
 
+          # Wait for PostgreSQL to be ready
+          until docker exec -it $(docker ps -q -f name=build-db-1) pg_isready; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+
           # Run migrations
           docker run --network host -v /home/web/build/migrations:/migrations migrate/migrate -path=/migrations -database postgres://postgres:Hanhan123@localhost:5432/virhan_db?sslmode=disable up
