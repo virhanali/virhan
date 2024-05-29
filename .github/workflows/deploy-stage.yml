@@ -34,78 +34,74 @@ jobs:
     needs: build
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
+      - name: Checkout Repository
+        uses: actions/checkout@v2
 
-    - name: Run a multi-line script to prepare files
-      run: |
-        mkdir -p ../build
-        cp -TR . ../build
-        tar -cvf deploy.tar ../build/
+      - name: Run a multi-line script to prepare files
+        run: |
+          mkdir ../build
+          cp -TR . ../build
+          tar -cvf deploy.tar ../build/
 
-    - name: Ensure Target Directory Exists and Set Permissions
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.VPS_HOST }}
-        username: ${{ secrets.VPS_USER }}
-        key: ${{ secrets.VPS_KEY }}
-        port: ${{ secrets.VPS_PORT }}
-        script: |
-          sudo mkdir -p /home/web
-          sudo chown -R $USER:$USER /home/web
+      - name: Ensure Target Directory Exists and Set Permissions
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            sudo mkdir -p /home/web
+            sudo chown -R $USER:$USER /home/web
 
-    - name: Upload deploy.tar
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.VPS_HOST }}
-        username: ${{ secrets.VPS_USER }}
-        key: ${{ secrets.VPS_KEY }}
-        port: ${{ secrets.VPS_PORT }}
-        source: ./deploy.tar
-        target: /home/web
-        debug: true
+      - name: Upload deploy.tar
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: ./deploy.tar
+          target: /home/web
+          debug: true
 
-    - name: SSH to VPS and Deploy
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.VPS_HOST }}
-        username: ${{ secrets.VPS_USER }}
-        key: ${{ secrets.VPS_KEY }}
-        port: ${{ secrets.VPS_PORT }}
-        script: |
-          # Kill any process using port 5432
-          sudo fuser -k 5432/tcp || true
+      - name: SSH to VPS and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            # Kill any process using port 5432
+            sudo fuser -k 5432/tcp || true
 
-          # Extract files
-          cd /home/web
-          tar -xvf deploy.tar
-          cd build
+            # Stop and remove existing containers and volumes
+            docker stop web-db-1 || true
+            docker rm web-db-1 || true
+            docker-compose down || true
+            docker volume rm $(docker volume ls -qf "dangling=true") || true
 
-          # Install Docker if not already installed
-          if ! command -v docker &> /dev/null; then
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sh get-docker.sh
-            sudo usermod -aG docker $USER
-          fi
-          # Install Docker Compose if not already installed
-          if ! command -v docker-compose &> /dev/null; then
-            sudo curl -L "https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
-          fi
+            # Extract files
+            cd /home/web
+            tar -xvf deploy.tar
+            cd build
 
-          # Stop and remove existing containers and volumes
-          docker-compose down || true
-          docker volume rm $(docker volume ls -qf "dangling=true") || true
+            # Install Docker if not already installed
+            if ! command -v docker &> /dev/null; then
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sh get-docker.sh
+              sudo usermod -aG docker $USER
+            fi
+            # Install Docker Compose if not already installed
+            if ! command -v docker-compose &> /dev/null; then
+              sudo curl -L "https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+            fi
+            # Navigate to the target directory and deploy
+            docker-compose down || true
+            docker-compose up -d
 
-          # Navigate to the target directory and deploy
-          docker-compose up -d
-
-          # Wait for PostgreSQL to be ready
-          until docker exec -it $(docker ps -q -f name=build-db-1) pg_isready; do
-            echo "Waiting for PostgreSQL to be ready..."
-            sleep 2
-          done
-
-          # Run migrations
-          docker run --network host -v /home/web/build/migrations:/migrations migrate/migrate -path=/migrations -database postgres://postgres:Hanhan123@localhost:5432/virhan_db?sslmode=disable up
+            # Run migrations
+            docker run --network host -v /home/web/build/migrations:/migrations migrate/migrate -path=/migrations -database postgres://postgres:Hanhan123@localhost:5432/virhan_db?sslmode=disable up
